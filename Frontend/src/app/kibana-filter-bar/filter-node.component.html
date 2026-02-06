@@ -1,0 +1,205 @@
+<div class="filter-node" [class.nested]="depth > 0">
+  <!-- Boolean Node (AND/OR) -->
+  <div *ngIf="isBoolean && booleanNode" class="boolean-node">
+    <div class="boolean-header">
+      <button 
+        class="operator-toggle-btn"
+        (click)="onToggleOperator()"
+        [title]="'Toggle to ' + (booleanNode.operator === 'AND' ? 'OR' : 'AND')">
+        {{ booleanNode.operator }}
+      </button>
+      <button 
+        class="remove-btn"
+        (click)="onRemoveFilter()"
+        title="Remove group">
+        ×
+      </button>
+    </div>
+    
+    <div class="boolean-children" [class.depth-{{depth}}]="true">
+      <div 
+        *ngFor="let child of booleanNode.children; let i = index" 
+        class="boolean-child">
+        
+        <!-- Operator separator (except for first child) -->
+        <div *ngIf="i > 0" class="child-operator-separator">
+          <span class="operator-label">{{ booleanNode.operator }}</span>
+        </div>
+        
+        <!-- Recursive component for child nodes -->
+        <app-filter-node
+          [node]="child"
+          [depth]="depth + 1"
+          [availableFields]="availableFields"
+          [operators]="operators"
+          [rangeOperators]="rangeOperators"
+          [fieldValuesMap]="fieldValuesMap"
+          [loadingFieldValues]="loadingFieldValues"
+          (addFilter)="addFilter.emit($event)"
+          (removeFilter)="removeFilter.emit($event)"
+          (toggleOperator)="toggleOperator.emit($event)"
+          (fieldChange)="fieldChange.emit($event)"
+          (operatorChange)="operatorChange.emit($event)"
+          (valueChange)="valueChange.emit($event)">
+        </app-filter-node>
+      </div>
+    </div>
+    
+  
+  </div>
+
+  <!-- Filter Condition (Leaf Node) -->
+  <div *ngIf="isFilter && filterCondition" class="filter-condition">
+    <div class="condition-row">
+      <!-- Field selector -->
+      <select 
+        class="field-select"
+        [value]="filterCondition.field || ''"
+        (change)="onFieldChange($any($event.target).value)">
+        <option value="">Select a field</option>
+        <option *ngFor="let field of availableFields" [value]="field">
+          {{ field }}
+        </option>
+      </select>
+
+      <!-- Operator selector -->
+      <select 
+        class="operator-select"
+        [value]="filterCondition.operator || ''"
+        (change)="onOperatorChange($any($event.target).value)">
+        <option value="">Select operator</option>
+        <option *ngFor="let op of operators" [value]="op.value">
+          {{ op.label }}
+        </option>
+      </select>
+
+      <!-- Loading indicator -->
+      <div *ngIf="isLoadingFieldValues(filterCondition.field || '')" class="loading-values">
+        <span>Loading...</span>
+      </div>
+
+      <!-- Range inputs -->
+      <div 
+        *ngIf="!isLoadingFieldValues(filterCondition.field || '') && 
+               filterCondition.operator === 'range'"
+        class="range-inputs">
+        <select
+          class="range-operator-select"
+          [value]="filterCondition.minOperator || 'gt'"
+          (change)="onRangeValueChange(undefined, undefined, $any($event.target).value, undefined)">
+          <option *ngFor="let op of getMinRangeOperators()" [value]="op.value">
+            {{ op.label }}
+          </option>
+        </select>
+        <input
+          class="range-value-input"
+          type="text"
+          [value]="filterCondition.minValue || ''"
+          placeholder="Min value"
+          (input)="onRangeValueChange($any($event.target).value, undefined, undefined, undefined)"/>
+        <select
+          class="range-operator-select"
+          [value]="filterCondition.maxOperator || 'lt'"
+          (change)="onRangeValueChange(undefined, undefined, undefined, $any($event.target).value)">
+          <option *ngFor="let op of getMaxRangeOperators()" [value]="op.value">
+            {{ op.label }}
+          </option>
+        </select>
+        <input
+          class="range-value-input"
+          type="text"
+          [value]="filterCondition.maxValue || ''"
+          placeholder="Max value"
+          (input)="onRangeValueChange(undefined, $any($event.target).value, undefined, undefined)"/>
+      </div>
+
+      <!-- Prefix/Wildcard/Query String inputs -->
+      <input
+        *ngIf="!isLoadingFieldValues(filterCondition.field || '') && 
+               (filterCondition.operator === 'prefix' || 
+                filterCondition.operator === 'wildcard' || 
+                filterCondition.operator === 'query_string')"
+        class="value-input"
+        type="text"
+        [value]="filterCondition.value || ''"
+        placeholder="Search"
+        (input)="onValueChange($any($event.target).value)"/>
+
+      <!-- Value dropdown for keyword fields -->
+      <select
+        *ngIf="!isLoadingFieldValues(filterCondition.field || '') &&
+               filterCondition.field && 
+               filterCondition.operator && 
+               filterCondition.operator !== 'exists' && 
+               filterCondition.operator !== 'does_not_exist' &&
+               filterCondition.operator !== 'range' &&
+               filterCondition.operator !== 'prefix' &&
+               filterCondition.operator !== 'wildcard' &&
+               filterCondition.operator !== 'query_string' &&
+               isKeywordField(filterCondition.field) &&
+               getFieldValues(filterCondition.field).length > 0"
+        class="value-input value-select"
+        [value]="filterCondition.value || ''"
+        (change)="onValueChange($any($event.target).value)">
+        <option value="">Select value...</option>
+        <option *ngFor="let val of getFieldValues(filterCondition.field)" [value]="val">
+          {{ val }}
+        </option>
+      </select>
+
+      <!-- Value text input -->
+      <input
+        *ngIf="!isLoadingFieldValues(filterCondition.field || '') && 
+               (!filterCondition.field || 
+                !filterCondition.operator ||
+                filterCondition.operator === 'exists' || 
+                filterCondition.operator === 'does_not_exist' ||
+                filterCondition.operator === 'range' ||
+                filterCondition.operator === 'prefix' ||
+                filterCondition.operator === 'wildcard' ||
+                filterCondition.operator === 'query_string' ||
+                !isKeywordField(filterCondition.field) ||
+                (isKeywordField(filterCondition.field) && 
+                 getFieldValues(filterCondition.field).length === 0)) &&
+               filterCondition.operator !== 'range' &&
+               filterCondition.operator !== 'prefix' &&
+               filterCondition.operator !== 'wildcard' &&
+               filterCondition.operator !== 'query_string'"
+        class="value-input"
+        type="text"
+        [value]="filterCondition.value || ''"
+        [placeholder]="getValuePlaceholder()"
+        [disabled]="!filterCondition.field || !filterCondition.operator || 
+                   filterCondition.operator === 'exists' || 
+                   filterCondition.operator === 'does_not_exist'"
+        (input)="onValueChange($any($event.target).value)"/>
+
+      <!-- Action buttons -->
+      <div class="condition-actions">
+        <button 
+          class="action-btn delete-btn" 
+          (click)="onRemoveFilter()"
+          title="Delete filter">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M12 4l-8 8M4 4l8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <button 
+          class="action-btn add-btn add-or-btn" 
+          (click)="onAddFilter('OR')"
+          title="Add OR filter">
+          <span class="add-icon-circle">+</span>
+          <span>OR</span>
+        </button>
+        <button 
+          class="action-btn add-btn add-and-btn" 
+          (click)="onAddFilter('AND')"
+          title="Add AND filter">
+          <span class="add-icon-circle">+</span>
+          <span>AND</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
