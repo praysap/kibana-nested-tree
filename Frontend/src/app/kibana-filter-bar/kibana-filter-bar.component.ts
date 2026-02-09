@@ -754,31 +754,34 @@ getMaxRangeOperators() {
         };
       }
     } else {
-      // Different operators - build right-associatively from right to left
-      // This matches the Kibana sequential nesting behavior
+      // Different operators - build left-associatively from left to right
+      // Left-associative: A AND B AND C → ((A AND B) AND C)
+      // When operators differ, create nested groups respecting operator precedence
       
-      let result = queries[queries.length - 1].query;
+      let result = queries[0].query;
 
-      // Build from right to left, nesting when operator changes
-      for (let i = queries.length - 2; i >= 0; i--) {
-        const currentOp = operators[i + 1]!;
+      // Build from left to right, nesting when operator changes
+      for (let i = 1; i < queries.length; i++) {
+        const currentOp = operators[i]!;
         const currentQuery = queries[i].query;
+        const prevOp = i > 1 ? operators[i - 1] : null;
 
-        // Check if result needs parentheses (nesting)
+        // Check if result needs to be wrapped in parentheses (nesting)
+        // This happens when the previous operator differs from current operator
         let needsNesting = false;
-        if (i + 1 < queries.length - 1) {
-          const resultOp = operators[i + 2]!;
-          needsNesting = resultOp !== currentOp;
+        if (prevOp && prevOp !== currentOp) {
+          // Operator changed - need to wrap previous result
+          needsNesting = true;
         }
 
-        // Combine currentQuery with result
+        // Combine result with currentQuery using currentOp
         if (currentOp === 'OR') {
           // OR operation: use bool.should
           if (needsNesting) {
             // Result needs to be wrapped (it has different operator inside)
             result = {
               bool: {
-                should: [currentQuery, result],
+                should: [result, currentQuery],
                 minimum_should_match: 1
               }
             };
@@ -786,12 +789,12 @@ getMaxRangeOperators() {
             // Check if result is already a should clause
             if (result.bool && result.bool.should) {
               // Extend existing should clause
-              result.bool.should = [currentQuery, ...result.bool.should];
+              result.bool.should.push(currentQuery);
             } else {
               // Create new should clause
               result = {
                 bool: {
-                  should: [currentQuery, result],
+                  should: [result, currentQuery],
                   minimum_should_match: 1
                 }
               };
@@ -803,19 +806,19 @@ getMaxRangeOperators() {
             // Result needs to be wrapped (it has different operator inside)
             result = {
               bool: {
-                must: [currentQuery, result]
+                must: [result, currentQuery]
               }
             };
           } else {
             // Check if result is already a must clause
             if (result.bool && result.bool.must) {
               // Extend existing must clause
-              result.bool.must = [currentQuery, ...result.bool.must];
+              result.bool.must.push(currentQuery);
             } else {
               // Create new must clause
               result = {
                 bool: {
-                  must: [currentQuery, result]
+                  must: [result, currentQuery]
                 }
               };
             }
